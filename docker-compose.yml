@@ -1,0 +1,121 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: urlshort
+      POSTGRES_PASSWORD: urlshort
+      POSTGRES_DB: urlshort
+    ports:
+      - "5482:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U urlshort -d urlshort"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6430:6379"
+    command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build: .
+    command: ["./migrate", "up"]
+    environment:
+      DATABASE_URL: postgres://urlshort:urlshort@postgres:5432/urlshort?sslmode=disable
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: .
+    command: ["./api"]
+    ports:
+      - "8050:8080"
+    environment:
+      DATABASE_URL: postgres://urlshort:urlshort@postgres:5432/urlshort?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      BASE_URL: http://localhost:8050
+      CORS_ORIGINS: http://localhost:5223
+      LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    build: .
+    command: ["./worker"]
+    environment:
+      DATABASE_URL: postgres://urlshort:urlshort@postgres:5432/urlshort?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      WORKER_METRICS_PORT: "9114"
+      LOG_LEVEL: info
+    ports:
+      - "9114:9114"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    ports:
+      - "9098:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    depends_on:
+      - api
+      - worker
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3006:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/etc/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8050
+    ports:
+      - "5223:5173"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  grafana_data:

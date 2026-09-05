@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: urlshort
+          POSTGRES_PASSWORD: urlshort
+          POSTGRES_DB: urlshort
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U urlshort -d urlshort"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://urlshort:urlshort@localhost:5432/urlshort?sslmode=disable
+      REDIS_URL: redis://localhost:6379
+      BASE_URL: http://localhost:8080
+      SNOWFLAKE_WORKER_ID: "1"
+      RATE_LIMIT_PER_MIN: "60"
+      CACHE_TTL_HOURS: "24"
+      BLOOM_FILTER_SIZE: "958506"
+      BLOOM_FILTER_HASHES: "7"
+      WORKER_METRICS_PORT: "9114"
+      ROLLUP_INTERVAL_SECONDS: "60"
+      PARTITION_CHECK_INTERVAL_SECONDS: "3600"
+      BATCH_FLUSH_SIZE: "500"
+      BATCH_FLUSH_MILLIS: "1000"
+      BATCH_CHANNEL_BUFFER: "10000"
+      SHUTDOWN_GRACE_SECONDS: "30"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Run migrations
+        run: go run ./cmd/migrate up
+
+      - name: Unit tests
+        run: go test -race -short ./...
+
+      - name: Integration tests
+        run: go test -race -tags=integration ./tests/integration/...
+
+      - name: Build
+        run: |
+          go build -o bin/api ./cmd/api
+          go build -o bin/worker ./cmd/worker
+          go build -o bin/migrate ./cmd/migrate
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: npm run build
