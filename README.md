@@ -1,5 +1,7 @@
 # High-Performance URL Shortener with Redis Caching and Analytics Dashboard
 
+> **Maintained by [Jennita S](https://github.com/Jennita-Santhakumar)** · [LinkedIn](https://linkedin.com/in/jennitas) · jennitasanthakumar0@gmail.com
+
 A production-shaped URL shortener in Go: a Redis-cached redirect path targeting sub-50ms
 latency, Snowflake-based distributed short-code generation, a Redis-bitmap Bloom filter for
 collision pre-checks, a buffered click-tracking pipeline with per-day rollups, offline GeoIP,
@@ -161,3 +163,7 @@ migrations), Redis 7 (cache, Bloom-filter bitmap, rate limiting), React + TypeSc
 | Redirect latency (P99) | <50ms |
 | Create URL latency (P99) | <200ms |
 | Cache hit rate | >99% |
+
+## Credits
+
+Developed by Kabilesh Rajaselvan with contributions from Jennita S.
